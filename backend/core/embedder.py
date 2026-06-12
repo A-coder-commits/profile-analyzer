@@ -1,9 +1,10 @@
 """
-Text embedding using sentence-transformers.
+Text embedding using FastEmbed.
 
 Provides text chunking (with overlap) and embedding generation
-via the all-MiniLM-L6-v2 model. All downstream modules call
-embed_texts() to get vector representations.
+via the BAAI/bge-small-en-v1.5 model. Lightweight replacement
+for sentence-transformers — same interface, ~10x smaller download.
+All downstream modules call embed_texts() to get vector representations.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 
 from core.config import EMBED_MODEL_NAME
 
@@ -21,15 +22,15 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _get_model() -> SentenceTransformer:
+def _get_model() -> TextEmbedding:
     """
-    Lazily load and cache the sentence-transformers model.
+    Lazily load and cache the FastEmbed model.
 
     The model is downloaded on first call and kept in memory
     for all subsequent embedding requests.
     """
-    logger.info("Loading sentence-transformers model: %s", EMBED_MODEL_NAME)
-    return SentenceTransformer(EMBED_MODEL_NAME)
+    logger.info("Loading FastEmbed model: %s", EMBED_MODEL_NAME)
+    return TextEmbedding(model_name=EMBED_MODEL_NAME)
 
 
 # ── Chunking ─────────────────────────────────────────────────────────────────
@@ -81,12 +82,15 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     """
     Generate embedding vectors for a list of text strings.
 
+    FastEmbed returns a generator — we convert it to a list of
+    float lists for compatibility with ChromaDB.
+
     Args:
         texts: List of text strings to embed.
 
     Returns:
         List of embedding vectors (each a list of floats).
-        The dimensionality depends on the model (384 for MiniLM-L6-v2).
+        Dimensionality is 384 for BAAI/bge-small-en-v1.5.
 
     Raises:
         ValueError: If texts is empty.
@@ -95,8 +99,8 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         raise ValueError("Cannot embed an empty list of texts.")
 
     model = _get_model()
-    embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
-    return embeddings.tolist()
+    embeddings = list(model.embed(texts))
+    return [emb.tolist() for emb in embeddings]
 
 
 def chunk_and_embed(text: str) -> tuple[list[str], list[list[float]]]:
